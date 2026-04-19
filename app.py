@@ -8,11 +8,15 @@ import json
 import urllib.parse
 
 app = Flask(__name__)
-app.secret_key = "dev-secret"
+app.secret_key = os.environ.get("SECRET_KEY", "dev-secret")
 
 TENANT_ID = os.environ.get("AZURE_TENANT_ID", "common")
 CLIENT_ID = os.environ.get("AZURE_CLIENT_ID")
 REDIRECT_URI = os.environ.get("REDIRECT_URI")
+
+# Validate required environment variables
+if not CLIENT_ID or not REDIRECT_URI:
+    raise ValueError("Missing required environment variables: AZURE_CLIENT_ID and REDIRECT_URI")
 
 # -----------------------
 # Helper: Decode JWT
@@ -22,7 +26,7 @@ def decode_jwt(token):
         parts = token.split(".")
         payload = parts[1] + "=" * (-len(parts[1]) % 4)
         return json.loads(base64.urlsafe_b64decode(payload))
-    except:
+    except Exception:
         return {}
 
 # -----------------------
@@ -88,6 +92,11 @@ def pkce_start():
 @app.route("/callback")
 def callback():
     code = request.args.get("code")
+    state = request.args.get("state")
+    
+    # Validate state parameter
+    if state != session.get("state"):
+        return "Invalid state parameter", 400
 
     token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
 
@@ -100,6 +109,9 @@ def callback():
     }
 
     res = requests.post(token_url, data=data)
+    if not res.ok:
+        return f"Token request failed: {res.text}", 400
+    
     token_json = res.json()
 
     id_token = token_json.get("id_token", "")
