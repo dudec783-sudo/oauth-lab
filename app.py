@@ -1,6 +1,5 @@
 from flask import Flask, redirect, request
 import requests
-import os
 
 app = Flask(__name__)
 
@@ -8,18 +7,14 @@ app = Flask(__name__)
 def home():
     user = None
 
-    # Call Azure Easy Auth endpoint
-    headers = {"X-ZUMO-AUTH": request.headers.get("X-ZUMO-AUTH", "")}
-    
     try:
-        resp = requests.get(
-            os.environ.get("WEBSITE_AUTH_ME_ENDPOINT", "/.auth/me"),
-        )
+        # Call Azure Easy Auth endpoint
+        resp = requests.get("http://127.0.0.1:8000/.auth/me")
         data = resp.json()
         if data:
             user = data[0]
-    except:
-        pass
+    except Exception as e:
+        user = f"Error: {str(e)}"
 
     return f"""
     <h2>OAuth Lab</h2>
@@ -32,6 +27,3 @@ def home():
 @app.route("/login")
 def login():
     return redirect("/.auth/login/aad")
-
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
