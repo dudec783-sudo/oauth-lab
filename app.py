@@ -102,6 +102,7 @@ def callback():
 
     data = {
         "client_id": CLIENT_ID,
+        "client_secret": os.environ.get("AZURE_CLIENT_SECRET"), 
         "grant_type": "authorization_code",
         "code": code,
         "redirect_uri": REDIRECT_URI,
