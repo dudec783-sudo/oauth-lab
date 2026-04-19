@@ -72,8 +72,9 @@ def generate_auth_url(flow_type="pkce", scope="openid profile email"):
     Generate Azure AD authorization URL for OAuth flows
     """
     state = secrets.token_urlsafe(16)
+    # Only store minimal PKCE/session data
+    session.clear()
     session[f"{flow_type}_state"] = state
-    
     params = {
         "client_id": CLIENT_ID,
         "response_type": "code",
@@ -81,22 +82,16 @@ def generate_auth_url(flow_type="pkce", scope="openid profile email"):
         "scope": scope,
         "state": state,
     }
-    
-    # Add PKCE parameters
     if flow_type == "pkce":
         code_verifier = base64.urlsafe_b64encode(secrets.token_bytes(32)).decode().rstrip("=")
         code_challenge = base64.urlsafe_b64encode(
             hashlib.sha256(code_verifier.encode()).digest()
         ).decode().rstrip("=")
-        
         session[f"{flow_type}_code_verifier"] = code_verifier
         params["code_challenge"] = code_challenge
         params["code_challenge_method"] = "S256"
-    
-    # Build URL
     query_string = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
     auth_url = f"{AUTH_ENDPOINT}?{query_string}"
-    
     return auth_url
 
 
@@ -599,8 +594,9 @@ def oauth_callback():
             "flow_type": "PKCE",
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
+        session.pop("pkce_state", None)
+        session.pop("pkce_code_verifier", None)
         return redirect("/")
-    
     try:
         # Exchange authorization code for tokens
         token_data = {
@@ -610,36 +606,30 @@ def oauth_callback():
             "redirect_uri": REDIRECT_URI,
             "code_verifier": session.get("pkce_code_verifier"),
         }
-        
-        # Add client secret if available (recommended for web apps)
         if CLIENT_SECRET:
             token_data["client_secret"] = CLIENT_SECRET
-        
         response = requests.post(TOKEN_ENDPOINT, data=token_data, timeout=10)
-        
         if not response.ok:
             session["flow_data"] = {
                 "error": f"Token request failed: {response.status_code} - {response.text}",
                 "flow_type": "PKCE",
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
+            session.pop("pkce_state", None)
+            session.pop("pkce_code_verifier", None)
             return redirect("/")
-        
         token_json = response.json()
-        
-        # Check for token errors
         if "error" in token_json:
             session["flow_data"] = {
                 "error": f"{token_json.get('error')}: {token_json.get('error_description')}",
                 "flow_type": "PKCE",
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
+            session.pop("pkce_state", None)
+            session.pop("pkce_code_verifier", None)
             return redirect("/")
-        
-        # Decode tokens
         id_token = token_json.get("id_token", "")
         access_token = token_json.get("access_token", "")
-        
         session["flow_data"] = {
             "flow_type": "PKCE",
             "token_response": token_json,
@@ -648,15 +638,22 @@ def oauth_callback():
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S"),
             "state": state
         }
-        
+        # Clear PKCE session data after use
+        session.pop("pkce_state", None)
+        session.pop("pkce_code_verifier", None)
     except Exception as e:
         session["flow_data"] = {
             "error": f"Exception during token exchange: {str(e)}",
             "flow_type": "PKCE",
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
-    
+        session.pop("pkce_state", None)
+        session.pop("pkce_code_verifier", None)
     return redirect("/")
+# =============================
+# NOTE FOR PRODUCTION:
+# For Azure App Service or any production deployment, use a server-side session backend (e.g., Flask-Session with Redis or Azure Cache for Redis)
+# to avoid cookie size limits and improve security. See Flask-Session docs for setup instructions.
 
 
 # =====================================================================
