@@ -4,6 +4,7 @@ Demonstrates Authorization Code, PKCE, Client Credentials, and Device Code flows
 """
 
 from flask import Flask, redirect, request, session, render_template_string
+from dotenv import load_dotenv
 import requests
 import os
 import base64
@@ -12,6 +13,9 @@ import secrets
 import json
 import urllib.parse
 import time
+
+# Load environment variables from .env file
+load_dotenv()
 
 # =====================================================================
 # FLASK APP INITIALIZATION
@@ -114,22 +118,22 @@ HOME_TEMPLATE = """
 <head>
     <title>OAuth 2.0 Learning Lab</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }
-        h1 { color: #0078d4; border-bottom: 2px solid #0078d4; padding-bottom: 10px; }
-        h2 { color: #333; margin-top: 30px; }
-        .flow-section { background: white; padding: 20px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
-        .button { display: inline-block; padding: 10px 20px; margin: 5px; background: #0078d4; color: white; text-decoration: none; border-radius: 3px; cursor: pointer; border: none; font-size: 14px; }
-        .button:hover { background: #005a9e; }
-        .button.secondary { background: #6c757d; }
-        .button.secondary:hover { background: #545b62; }
-        .output { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; padding: 15px; margin-top: 10px; font-family: monospace; font-size: 12px; max-height: 400px; overflow: auto; }
-        .token-section { margin: 15px 0; }
-        .token-section h4 { background: #e9ecef; padding: 10px; margin: 0; border-radius: 3px 3px 0 0; }
-        .error { background: #f8d7da; color: #721c24; padding: 12px; border-radius: 3px; margin: 10px 0; border: 1px solid #f5c6cb; }
-        .success { background: #d4edda; color: #155724; padding: 12px; border-radius: 3px; margin: 10px 0; border: 1px solid #c3e6cb; }
-        .info { background: #d1ecf1; color: #0c5460; padding: 12px; border-radius: 3px; margin: 10px 0; border: 1px solid #bee5eb; }
-        pre { background: white; border: 1px solid #dee2e6; padding: 10px; border-radius: 3px; overflow-x: auto; }
-        .metadata { background: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 3px; margin: 10px 0; font-size: 12px; }
+        body {{ font-family: Arial, sans-serif; max-width: 1200px; margin: 0 auto; padding: 20px; background: #f5f5f5; }}
+        h1 {{ color: #0078d4; border-bottom: 2px solid #0078d4; padding-bottom: 10px; }}
+        h2 {{ color: #333; margin-top: 30px; }}
+        .flow-section {{ background: white; padding: 20px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        .button {{ display: inline-block; padding: 10px 20px; margin: 5px; background: #0078d4; color: white; text-decoration: none; border-radius: 3px; cursor: pointer; border: none; font-size: 14px; }}
+        .button:hover {{ background: #005a9e; }}
+        .button.secondary {{ background: #6c757d; }}
+        .button.secondary:hover {{ background: #545b62; }}
+        .output {{ background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 3px; padding: 15px; margin-top: 10px; font-family: monospace; font-size: 12px; max-height: 400px; overflow: auto; }}
+        .token-section {{ margin: 15px 0; }}
+        .token-section h4 {{ background: #e9ecef; padding: 10px; margin: 0; border-radius: 3px 3px 0 0; }}
+        .error {{ background: #f8d7da; color: #721c24; padding: 12px; border-radius: 3px; margin: 10px 0; border: 1px solid #f5c6cb; }}
+        .success {{ background: #d4edda; color: #155724; padding: 12px; border-radius: 3px; margin: 10px 0; border: 1px solid #c3e6cb; }}
+        .info {{ background: #d1ecf1; color: #0c5460; padding: 12px; border-radius: 3px; margin: 10px 0; border: 1px solid #bee5eb; }}
+        pre {{ background: white; border: 1px solid #dee2e6; padding: 10px; border-radius: 3px; overflow-x: auto; }}
+        .metadata {{ background: #fff3cd; border: 1px solid #ffc107; padding: 10px; border-radius: 3px; margin: 10px 0; font-size: 12px; }}
     </style>
 </head>
 <body>
@@ -479,6 +483,10 @@ def device_poll():
             "grant_type": "urn:ietf:params:oauth:grant-type:device_code"
         }
         
+        # Add client secret if available (required for token request)
+        if CLIENT_SECRET:
+            token_data["client_secret"] = CLIENT_SECRET
+        
         response = requests.post(TOKEN_ENDPOINT, data=token_data, timeout=10)
         
         # Still waiting for user
@@ -490,20 +498,32 @@ def device_poll():
                 # User hasn't completed yet, show waiting message
                 flow_data = session.get("flow_data", {})
                 flow_data["state"] = "Waiting for user to complete authentication..."
+                flow_data["token_response"] = {
+                    "status": "authorization_pending",
+                    "message": "Waiting for user to complete authentication on another device",
+                    "device_code_info": flow_data.get("device_code_info", {})
+                }
                 session["flow_data"] = flow_data
                 
-                # Return HTML that auto-refreshes to poll again
-                return f"""
-                <html>
-                <head><meta http-equiv="refresh" content="5"></head>
-                <body>
-                    <h2>Device Code Flow - Waiting</h2>
-                    <p>{flow_data.get('device_code_info', {}).get('instruction')}</p>
-                    <p>Polling for completion... (auto-refreshes every 5 seconds)</p>
-                    <a href="/">Back to Home</a>
-                </body>
-                </html>
-                """
+                # Redirect to home page with meta refresh so it shows formatted output
+                html = HOME_TEMPLATE.format(
+                    tenant=TENANT_ID,
+                    client_id_display=CLIENT_ID[:10] + "***" if CLIENT_ID else "NOT SET",
+                    redirect_uri=REDIRECT_URI,
+                    flow_output=FLOW_OUTPUT_TEMPLATE.format(
+                        error_display="",
+                        success_display=f'<div class="info"><strong>⏳ Waiting...</strong> User is completing authentication on another device</div>',
+                        token_response=format_json(flow_data.get("token_response", {})),
+                        id_token_display="",
+                        access_token_display="",
+                        flow_type="Device Code",
+                        timestamp=time.strftime("%Y-%m-%d %H:%M:%S"),
+                        state=flow_data.get("state", "Waiting...")
+                    )
+                )
+                
+                # Return with auto-refresh meta tag
+                return html.replace("</head>", '<meta http-equiv="refresh" content="5">\n</head>')
             elif error_code == "expired_token":
                 session["flow_data"] = {
                     "error": "Device code has expired",
